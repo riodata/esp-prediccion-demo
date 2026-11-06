@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESP Predictive Monitor · Vaca Muerta</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #080c12;
+    --panel: #0d1520;
+    --panel2: #111c2e;
+    --border: #1e3a5f;
+    --accent: #1a6eb5;
+    --red: #e84040;
+    --red-glow: rgba(232,64,64,0.35);
+    --green: #2dcc70;
+    --green-glow: rgba(45,204,112,0.3);
+    --yellow: #f0b429;
+    --text: #c8dff0;
+    --text-dim: #5a7a9a;
+    --font-head: 'Rajdhani', sans-serif;
+    --font-mono: 'Share Tech Mono', monospace;
+    --font-body: 'Barlow Condensed', sans-serif;
+
+    /* Crew colors */
+    --crew1: #f97316;
+    --crew2: #a855f7;
+    --crew3: #06b6d4;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    min-height: 100vh;
+    overflow: hidden;
+    background-image:
+      linear-gradient(rgba(30,58,95,0.07) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(30,58,95,0.07) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  /* HEADER */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 9px 20px;
+    background: linear-gradient(180deg, #0a1828 0%, rgba(8,12,18,0.95) 100%);
+    border-bottom: 1px solid var(--border);
+    position: relative; z-index: 10;
+  }
+  header::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), var(--red), var(--crew1), var(--crew2), var(--crew3), var(--accent), transparent);
+  }
+  .logo-area { display: flex; align-items: center; gap: 12px; }
+  .logo-icon {
+    width: 36px; height: 36px;
+    border: 2px solid var(--accent); border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(26,110,181,0.15);
+  }
+  .logo-icon svg { width: 20px; height: 20px; }
+  .logo-text h1 {
+    font-family: var(--font-head);
+    font-size: 18px; font-weight: 700;
+    letter-spacing: 3px; text-transform: uppercase; color: #fff; line-height: 1;
+  }
+  .logo-text span { font-family: var(--font-mono); font-size: 9px; color: var(--accent); letter-spacing: 2px; }
+
+  .header-kpis { display: flex; gap: 16px; }
+  .h-kpi {
+    text-align: center; padding: 4px 14px;
+    border: 1px solid var(--border); border-radius: 4px;
+    background: rgba(13,21,32,0.8);
+  }
+  .h-kpi .val { font-family: var(--font-mono); font-size: 20px; font-weight: 700; line-height: 1; }
+  .h-kpi .lbl { font-size: 10px; color: var(--text-dim); letter-spacing: 1.5px; text-transform: uppercase; }
+  .h-kpi.alert .val { color: var(--red); text-shadow: 0 0 12px var(--red-glow); }
+  .h-kpi.ok .val { color: var(--green); }
+  .h-kpi.warn .val { color: var(--yellow); }
+
+  .header-right { display: flex; align-items: center; gap: 14px; }
+  .blink-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green-glow); animation: blink 1.5s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+  .live-label { font-family: var(--font-mono); font-size: 11px; color: var(--green); letter-spacing: 2px; }
+  .timestamp { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); }
+
+  /* MAIN LAYOUT */
+  .main {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    height: calc(100vh - 58px);
+  }
+
+  /* LEFT: MAP */
+  .map-panel { display: flex; flex-direction: column; border-right: 1px solid var(--border); }
+  .panel-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 7px 14px;
+    background: var(--panel); border-bottom: 1px solid var(--border);
+    font-family: var(--font-head); font-size: 12px; font-weight: 600;
+    letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim);
+  }
+  .panel-header .tag {
+    font-family: var(--font-mono); font-size: 10px;
+    padding: 2px 8px; border: 1px solid var(--accent); color: var(--accent); border-radius: 2px;
+  }
+  .map-container { flex: 1; position: relative; overflow: hidden; }
+  #mapCanvas { width: 100%; height: 100%; display: block; }
+
+  /* Legend + KPIs */
+  .map-legend {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 6px 14px; background: var(--panel); border-top: 1px solid var(--border);
+    font-size: 11px;
+  }
+  .legend-item { display: flex; align-items: center; gap: 5px; }
+  .legend-dot { width: 9px; height: 9px; border-radius: 50%; }
+  .legend-dot.red { background: var(--red); box-shadow: 0 0 6px var(--red-glow); }
+  .legend-dot.green { background: var(--green); }
+  .legend-sq { width: 9px; height: 9px; border-radius: 2px; }
+  .legend-label { color: var(--text-dim); font-family: var(--font-mono); font-size: 10px; }
+  .legend-line { width: 18px; height: 2px; border-radius: 1px; }
+
+  .kpi-bar {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    border-top: 1px solid var(--border); background: var(--panel);
+  }
+  .kpi-item {
+    padding: 9px 12px; border-right: 1px solid var(--border); position: relative;
+  }
+  .kpi-item:last-child { border-right: none; }
+  .kpi-item .kpi-val { font-family: var(--font-mono); font-size: 24px; font-weight: 700; line-height: 1; color: #fff; }
+  .kpi-item .kpi-val.red { color: var(--red); text-shadow: 0 0 16px var(--red-glow); }
+  .kpi-item .kpi-val.green { color: var(--green); }
+  .kpi-item .kpi-val.yellow { color: var(--yellow); }
+  .kpi-item .kpi-lbl { font-size: 10px; color: var(--text-dim); letter-spacing: 1.5px; text-transform: uppercase; margin-top: 2px; }
+  .kpi-item .kpi-sub { font-family: var(--font-mono); font-size: 9px; color: var(--text-dim); margin-top: 2px; }
+  .kpi-trend { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 16px; }
+
+  /* RIGHT PANEL */
+  .right-panel { display: flex; flex-direction: column; background: var(--panel2); overflow: hidden; }
+
+  /* CREW DISPATCH section */
+  .dispatch-header {
+    padding: 8px 12px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .dispatch-header span {
+    font-family: var(--font-head); font-size: 12px; font-weight: 700;
+    letter-spacing: 2.5px; text-transform: uppercase; color: var(--text-dim);
+  }
+  .dispatch-badge {
+    font-family: var(--font-mono); font-size: 10px;
+    padding: 2px 8px;
+    background: rgba(249,115,22,0.15); border: 1px solid var(--crew1);
+    color: var(--crew1); border-radius: 2px;
+  }
+
+  .crew-cards {
+    display: flex; flex-direction: column; gap: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .crew-card {
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(30,58,95,0.5);
+    display: grid; grid-template-columns: auto 1fr auto;
+    gap: 10px; align-items: center;
+    position: relative; overflow: hidden;
+  }
+  .crew-card::before {
+    content: '';
+    position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  }
+  .crew-card.c1::before { background: var(--crew1); }
+  .crew-card.c2::before { background: var(--crew2); }
+  .crew-card.c3::before { background: var(--crew3); }
+
+  .crew-icon {
+    width: 32px; height: 32px; border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; flex-shrink: 0;
+  }
+  .crew-card.c1 .crew-icon { background: rgba(249,115,22,0.15); border: 1px solid var(--crew1); }
+  .crew-card.c2 .crew-icon { background: rgba(168,85,247,0.15); border: 1px solid var(--crew2); }
+  .crew-card.c3 .crew-icon { background: rgba(6,182,212,0.15); border: 1px solid var(--crew3); }
+
+  .crew-info h4 {
+    font-family: var(--font-head); font-size: 13px; font-weight: 700;
+    letter-spacing: 1px; text-transform: uppercase; line-height: 1;
+  }
+  .crew-card.c1 .crew-info h4 { color: var(--crew1); }
+  .crew-card.c2 .crew-info h4 { color: var(--crew2); }
+  .crew-card.c3 .crew-info h4 { color: var(--crew3); }
+
+  .crew-info .crew-base {
+    font-family: var(--font-mono); font-size: 9px; color: var(--text-dim);
+    margin-top: 1px; letter-spacing: 1px;
+  }
+  .crew-targets {
+    display: flex; flex-direction: column; gap: 2px;
+    align-items: flex-end;
+  }
+  .target-tag {
+    font-family: var(--font-mono); font-size: 9px;
+    padding: 1px 6px; border-radius: 2px;
+    color: var(--red); background: rgba(232,64,64,0.1);
+    border: 1px solid rgba(232,64,64,0.3);
+    white-space: nowrap;
+  }
+  .dist-label {
+    font-family: var(--font-mono); font-size: 9px; color: var(--text-dim); text-align: right;
+  }
+
+  /* ALERT BANNER */
+  .alert-banner {
+    background: linear-gradient(90deg, rgba(232,64,64,0.12), rgba(232,64,64,0.04));
+    border-bottom: 1px solid rgba(232,64,64,0.4);
+    padding: 8px 12px;
+    display: flex; align-items: center; gap: 9px;
+    animation: pulse-border 2s infinite;
+  }
+  @keyframes pulse-border { 0%,100%{ border-color:rgba(232,64,64,0.4) } 50%{ border-color:rgba(232,64,64,0.8) } }
+  .alert-icon {
+    width: 26px; height: 26px; border: 2px solid var(--red); border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--red); font-size: 13px; font-weight: 700;
+    animation: blink 1s infinite; flex-shrink: 0;
+  }
+  .alert-info h3 { font-family: var(--font-head); font-size: 13px; font-weight: 700; color: var(--red); letter-spacing: 1px; text-transform: uppercase; }
+  .alert-info p { font-family: var(--font-mono); font-size: 9px; color: rgba(232,64,64,0.7); letter-spacing: 1px; }
+  .risk-pill {
+    margin-left: auto;
+    background: rgba(232,64,64,0.2); border: 1px solid var(--red); border-radius: 12px;
+    padding: 3px 9px; font-family: var(--font-mono); font-size: 10px; color: var(--red); white-space: nowrap;
+  }
+
+  .pump-meta {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 1px; background: var(--border); border-bottom: 1px solid var(--border);
+  }
+  .meta-cell { background: var(--panel2); padding: 6px 10px; }
+  .meta-cell .mc-lbl { font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1.5px; }
+  .meta-cell .mc-val { font-family: var(--font-mono); font-size: 12px; color: var(--text); margin-top: 1px; }
+
+  .charts-label {
+    padding: 6px 12px 3px;
+    background: var(--panel2); border-bottom: 1px solid var(--border);
+    font-family: var(--font-head); font-size: 11px; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--text-dim);
+  }
+
+  .charts-scroll {
+    flex: 1; overflow-y: auto; padding: 8px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .charts-scroll::-webkit-scrollbar { width: 4px; }
+  .charts-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .chart-card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 4px;
+    padding: 8px 10px; position: relative; overflow: hidden;
+  }
+  .chart-card::before { content: ''; position: absolute; top: 0; left: 0; width: 3px; height: 100%; background: var(--accent); }
+  .chart-card.danger::before { background: var(--red); }
+  .chart-card.warning::before { background: var(--yellow); }
+  .cc-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+  .cc-title { font-family: var(--font-head); font-size: 12px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; }
+  .cc-value { font-family: var(--font-mono); font-size: 13px; font-weight: 700; }
+  .cc-value.danger { color: var(--red); text-shadow: 0 0 8px var(--red-glow); }
+  .cc-value.warning { color: var(--yellow); }
+  .cc-value.ok { color: var(--green); }
+  .mini-chart { width: 100%; height: 50px; }
+
+  .bottom-footer {
+    padding: 7px 12px; border-top: 1px solid var(--border); background: var(--panel);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .model-info { font-family: var(--font-mono); font-size: 9px; color: var(--text-dim); letter-spacing: 1px; }
+  .confidence-bar-wrap { display: flex; align-items: center; gap: 7px; }
+  .confidence-bar { width: 90px; height: 5px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; }
+  .confidence-fill { height: 100%; width: 87%; background: linear-gradient(90deg, var(--accent), var(--red)); border-radius: 3px; }
+  .conf-label { font-family: var(--font-mono); font-size: 10px; color: var(--red); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-area">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#1a6eb5" stroke-width="2" stroke-linecap="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M12 2v3M12 19v3M2 12h3M19 12h3M6 6l2 2M16 16l2 2M6 18l2-2M16 8l2-2"/>
+      </svg>
+    </div>
+    <div class="logo-text">
+      <h1>ESP Predictive Monitor</h1>
+      <span>VACA MUERTA · ALERTA TEMPRANA + DESPACHO DE CUADRILLAS</span>
+    </div>
+  </div>
+
+  <div class="header-kpis">
+    <div class="h-kpi alert"><div class="val">4</div><div class="lbl">En Riesgo</div></div>
+    <div class="h-kpi ok"><div class="val">54</div><div class="lbl">Operativas</div></div>
+    <div class="h-kpi" style="border-color:var(--crew1)"><div class="val" style="color:var(--crew1)">3</div><div class="lbl">Cuadrillas</div></div>
+    <div class="h-kpi"><div class="val" style="color:#fff">58</div><div class="lbl">Total ESP</div></div>
+  </div>
+
+  <div class="header-right">
+    <div class="blink-dot"></div>
+    <span class="live-label" style="color:#f0b429">DATOS SIMULADOS</span>
+    <span class="timestamp" id="clock">--:--:-- ART</span>
+  </div>
+</header>
+
+<div class="main">
+
+  <!-- MAP -->
+  <div class="map-panel">
+    <div class="panel-header">
+      <span>Mapa Operacional · Pozos + Rutas de Cuadrillas</span>
+      <span class="tag">NEUQUÉN · PATAGONIA</span>
+    </div>
+    <div class="map-container">
+      <canvas id="mapCanvas"></canvas>
+    </div>
+    <div class="map-legend">
+      <div class="legend-item"><div class="legend-dot red"></div><span class="legend-label">ESP RIESGO &lt;60hs</span></div>
+      <div class="legend-item"><div class="legend-dot green"></div><span class="legend-label">ESP NORMAL</span></div>
+      <div class="legend-item"><div class="legend-sq" style="background:var(--crew1)"></div><span class="legend-label" style="color:var(--crew1)">CUADRILLA A</span></div>
+      <div class="legend-item"><div class="legend-sq" style="background:var(--crew2)"></div><span class="legend-label" style="color:var(--crew2)">CUADRILLA B</span></div>
+      <div class="legend-item"><div class="legend-sq" style="background:var(--crew3)"></div><span class="legend-label" style="color:var(--crew3)">CUADRILLA C</span></div>
+      <div class="legend-item" style="margin-left:auto"><span class="legend-label" style="color:#fff">◉ SEL: ESP-0847</span></div>
+    </div>
+    <div class="kpi-bar">
+      <div class="kpi-item">
+        <div class="kpi-val red">87%</div>
+        <div class="kpi-lbl">Prob. Falla</div>
+        <div class="kpi-sub">ESP-0847 · Loma Campana</div>
+        <span class="kpi-trend" style="color:var(--red)">↑</span>
+      </div>
+      <div class="kpi-item">
+        <div class="kpi-val yellow">31 h</div>
+        <div class="kpi-lbl">Ventana Est.</div>
+        <div class="kpi-sub">±4.8 hs · IC 90%</div>
+        <span class="kpi-trend" style="color:var(--yellow)">↓</span>
+      </div>
+      <div class="kpi-item">
+        <div class="kpi-val" style="color:var(--crew1)">3</div>
+        <div class="kpi-lbl">Cuadrillas</div>
+        <div class="kpi-sub">4 destinos · ruta óptima</div>
+        <span class="kpi-trend" style="color:var(--crew1)">→</span>
+      </div>
+      <div class="kpi-item">
+        <div class="kpi-val" style="color:#fff">91%</div>
+        <div class="kpi-lbl">Fallas anticipadas</div>
+        <div class="kpi-sub">Recall validación · simulado</div>
+        <span class="kpi-trend" style="color:var(--accent)">↑</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div class="right-panel">
+
+    <!-- CREW DISPATCH -->
+    <div class="dispatch-header">
+      <span>Despacho Óptimo de Cuadrillas</span>
+      <div class="dispatch-badge">RUTEO</div>
+    </div>
+
+    <div class="crew-cards">
+      <div class="crew-card c1">
+        <div class="crew-icon">🚛</div>
+        <div class="crew-info">
+          <h4>Cuadrilla A · Base Añelo</h4>
+          <div class="crew-base">DEPÓSITO NORTE · 4 TÉCNICOS · 2 UNIDADES</div>
+          <div class="crew-base" style="margin-top:3px; color:var(--crew1)">RUTA: BASE → ESP-0847 → ESP-1203</div>
+        </div>
+        <div class="crew-targets">
+          <div class="target-tag">ESP-0847</div>
+          <div class="target-tag">ESP-1203</div>
+          <div class="dist-label">~68 km · 1h 10m</div>
+        </div>
+      </div>
+
+      <div class="crew-card c2">
+        <div class="crew-icon">🚛</div>
+        <div class="crew-info">
+          <h4>Cuadrilla B · Base Rincón</h4>
+          <div class="crew-base">DEPÓSITO ESTE · 4 TÉCNICOS · 2 UNIDADES</div>
+          <div class="crew-base" style="margin-top:3px; color:var(--crew2)">RUTA: BASE → ESP-0391</div>
+        </div>
+        <div class="crew-targets">
+          <div class="target-tag">ESP-0391</div>
+          <div class="dist-label">~41 km · 0h 48m</div>
+        </div>
+      </div>
+
+      <div class="crew-card c3">
+        <div class="crew-icon">🚛</div>
+        <div class="crew-info">
+          <h4>Cuadrilla C · Base Neuquén</h4>
+          <div class="crew-base">DEPÓSITO SUR · 4 TÉCNICOS · 2 UNIDADES</div>
+          <div class="crew-base" style="margin-top:3px; color:var(--crew3)">RUTA: BASE → ESP-0734</div>
+        </div>
+        <div class="crew-targets">
+          <div class="target-tag">ESP-0734</div>
+          <div class="dist-label">~55 km · 1h 02m</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ALERT BANNER + CHARTS -->
+    <div class="alert-banner">
+      <div class="alert-icon">!</div>
+      <div class="alert-info">
+        <h3>⚠ Crítica · ESP-0847 · Prioridad 1</h3>
+        <p>LOMA CAMPANA NORTE · PAD LC-22 · POZO 847-H</p>
+      </div>
+      <div class="risk-pill">87% · 31h</div>
+    </div>
+
+    <div class="pump-meta">
+      <div class="meta-cell"><div class="mc-lbl">Modelo</div><div class="mc-val">Baker Hughes GN5000</div></div>
+      <div class="meta-cell"><div class="mc-lbl">Días operando</div><div class="mc-val">810 días</div></div>
+      <div class="meta-cell"><div class="mc-lbl">Profundidad</div><div class="mc-val">2,840 m TVD</div></div>
+      <div class="meta-cell"><div class="mc-lbl">Última intervención</div><div class="mc-val">18/08/2024</div></div>
+    </div>
+
+    <div class="charts-label">Variables ESP-0847 · Últimas 72 hs</div>
+
+    <div class="charts-scroll">
+      <div class="chart-card danger">
+        <div class="cc-header"><span class="cc-title">Temperatura Motor</span><span class="cc-value danger">148.3 °C ↑</span></div>
+        <div class="mini-chart"><canvas id="c1"></canvas></div>
+      </div>
+      <div class="chart-card danger">
+        <div class="cc-header"><span class="cc-title">Corriente Eléctrica</span><span class="cc-value danger">68.9 A ↑</span></div>
+        <div class="mini-chart"><canvas id="c2"></canvas></div>
+      </div>
+      <div class="chart-card danger">
+        <div class="cc-header"><span class="cc-title">Vibración (X·Z)</span><span class="cc-value danger">0.82 g ↑↑</span></div>
+        <div class="mini-chart"><canvas id="c3"></canvas></div>
+      </div>
+      <div class="chart-card warning">
+        <div class="cc-header"><span class="cc-title">Caudal Producción</span><span class="cc-value warning">312 bbl/d ↓</span></div>
+        <div class="mini-chart"><canvas id="c4"></canvas></div>
+      </div>
+      <div class="chart-card warning">
+        <div class="cc-header"><span class="cc-title">Presión Intake</span><span class="cc-value warning">1,840 psi ↓</span></div>
+        <div class="mini-chart"><canvas id="c5"></canvas></div>
+      </div>
+    </div>
+
+    <div class="bottom-footer">
+      <div class="model-info">GRADIENT BOOSTING · DESPACHO: VECINO MÁS CERCANO · UPD: 00:05:32</div>
+      <div class="confidence-bar-wrap">
+        <span style="font-family:var(--font-mono); font-size:9px; color:var(--text-dim)">CONF</span>
+        <div class="confidence-bar"><div class="confidence-fill"></div></div>
+        <span class="conf-label">87%</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// CLOCK
+function updateClock() {
+  document.getElementById('clock').textContent = new Date().toTimeString().slice(0,8) + ' ART';
+}
+updateClock(); setInterval(updateClock, 1000);
+
+// ================================================================
+// MAP
+// ================================================================
+const mapCanvas = document.getElementById('mapCanvas');
+const ctx = mapCanvas.getContext('2d');
+
+// Positions (normalized 0-1)
+const riskPumps = [
+  { id:'ESP-0847', nx:0.38, ny:0.40, priority:1 },
+  { id:'ESP-1203', nx:0.62, ny:0.30, priority:2 },
+  { id:'ESP-0391', nx:0.55, ny:0.65, priority:3 },
+  { id:'ESP-0734', nx:0.28, ny:0.57, priority:4 },
+];
+
+const depots = [
+  { id:'BASE AÑELO',   nx:0.45, ny:0.16, color:'#f97316', crew:'A' },
+  { id:'BASE RINCÓN',  nx:0.80, ny:0.44, color:'#a855f7', crew:'B' },
+  { id:'BASE NEUQUÉN', nx:0.22, ny:0.88, color:'#06b6d4', crew:'C' },
+];
+
+// Routes: depot → pumps (greedy nearest-neighbor assignment)
+// Pre-computed: Crew A: BASE_AÑELO→ESP-0847→ESP-1203
+//               Crew B: BASE_RINCÓN→ESP-0391
+//               Crew C: BASE_NEUQUÉN→ESP-0734
+const routes = [
+  { color:'#f97316', alpha:0.75, waypoints:[ depots[0], riskPumps[0], riskPumps[1] ] },
+  { color:'#a855f7', alpha:0.75, waypoints:[ depots[1], riskPumps[2] ] },
+  { color:'#06b6d4', alpha:0.75, waypoints:[ depots[2], riskPumps[3] ] },
+];
+
+const normalPumps = [
+  [0.18,0.35],[0.22,0.44],[0.32,0.28],[0.44,0.22],[0.50,0.37],[0.48,0.51],
+  [0.68,0.47],[0.72,0.37],[0.75,0.58],[0.65,0.72],[0.58,0.78],[0.42,0.72],
+  [0.35,0.68],[0.25,0.70],[0.15,0.60],[0.12,0.47],[0.20,0.27],[0.30,0.17],
+  [0.40,0.14],[0.52,0.11],[0.62,0.17],[0.70,0.24],[0.78,0.27],[0.82,0.41],
+  [0.80,0.54],[0.76,0.67],[0.68,0.81],[0.55,0.88],[0.44,0.84],[0.35,0.80],
+  [0.22,0.82],[0.10,0.71],[0.08,0.58],[0.10,0.40],[0.14,0.27],[0.24,0.16],
+  [0.60,0.10],[0.72,0.14],[0.84,0.20],[0.88,0.32],[0.88,0.49],[0.86,0.63],
+  [0.82,0.76],[0.72,0.88],[0.58,0.92],[0.44,0.92],[0.28,0.90],[0.15,0.85],
+  [0.06,0.82],[0.84,0.54],[0.90,0.55],[0.06,0.45],[0.50,0.55],[0.40,0.48],
+];
+
+// Animated truck positions along each route
+let animFrame = 0;
+const truckProgress = [0, 0.22, 0.40]; // stagger starts
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function routePoint(waypoints, t, W, H) {
+  const segs = waypoints.length - 1;
+  if (segs === 0) return { x: waypoints[0].nx * W, y: waypoints[0].ny * H };
+  const segT = t * segs;
+  const segIdx = Math.min(Math.floor(segT), segs - 1);
+  const localT = segT - segIdx;
+  const a = waypoints[segIdx], b = waypoints[segIdx + 1];
+  return {
+    x: lerp(a.nx, b.nx, localT) * W,
+    y: lerp(a.ny, b.ny, localT) * H,
+  };
+}
+
+function drawDashedArrow(x1, y1, x2, y2, color, alpha, dashOffset) {
+  const W = mapCanvas.offsetWidth, H = mapCanvas.offsetHeight;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.2;
+  ctx.setLineDash([8, 5]);
+  ctx.lineDashOffset = -dashOffset;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 8;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Arrowhead
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  const al = 10, aw = 5;
+  ctx.fillStyle = color;
+  ctx.shadowBlur = 10;
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - al * Math.cos(angle - aw * 0.3), y2 - al * Math.sin(angle - aw * 0.3));
+  ctx.lineTo(x2 - al * Math.cos(angle + aw * 0.3), y2 - al * Math.sin(angle + aw * 0.3));
+  ctx.closePath();
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+function drawMap() {
+  const W = mapCanvas.offsetWidth, H = mapCanvas.offsetHeight;
+  if (!W || !H) return;
+  ctx.clearRect(0, 0, W, H);
+
+  // Terrain BG
+  const bg = ctx.createRadialGradient(W*0.4, H*0.5, 0, W*0.5, H*0.5, W*0.7);
+  bg.addColorStop(0, '#0f1d0a'); bg.addColorStop(0.5, '#0d1a08'); bg.addColorStop(1, '#080c05');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+  // Topography
+  ctx.strokeStyle = 'rgba(40,80,20,0.16)'; ctx.lineWidth = 1;
+  for (let i = 0; i < 8; i++) {
+    ctx.beginPath();
+    const yBase = H * (0.1 + i * 0.11);
+    ctx.moveTo(0, yBase);
+    for (let x = 0; x <= W; x += 30) {
+      ctx.lineTo(x, yBase + Math.sin(x*0.02+i)*14 + Math.sin(x*0.007+i*2)*22);
+    }
+    ctx.stroke();
+  }
+
+  // River
+  ctx.strokeStyle = 'rgba(20,80,140,0.3)'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(0, H*0.77);
+  for (let x = 0; x <= W; x += 20)
+    ctx.lineTo(x, H*0.77 + Math.sin(x*0.015)*16 + Math.sin(x*0.005)*28);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(80,160,220,0.4)'; ctx.font = '10px Share Tech Mono';
+  ctx.fillText('RÍO NEUQUÉN', 22, H*0.75);
+
+  // Region labels
+  ctx.fillStyle = 'rgba(150,200,100,0.18)'; ctx.font = 'bold 12px Rajdhani';
+  ctx.fillText('LOMA CAMPANA', W*0.28, H*0.36);
+  ctx.fillText('EL OREJANO', W*0.60, H*0.21);
+  ctx.fillText('LA AMARGA CHICA', W*0.50, H*0.58);
+  ctx.fillText('BANDURRIA SUR', W*0.10, H*0.53);
+
+  // Road grid (pipelines/caminos)
+  ctx.strokeStyle = 'rgba(80,120,60,0.12)'; ctx.lineWidth = 1; ctx.setLineDash([4,7]);
+  [[0.3,0.1,0.7,0.9],[0.1,0.3,0.9,0.5],[0.5,0.05,0.4,0.95],[0.1,0.5,0.9,0.3]].forEach(([x1,y1,x2,y2]) => {
+    ctx.beginPath(); ctx.moveTo(W*x1, H*y1); ctx.lineTo(W*x2, H*y2); ctx.stroke();
+  });
+  ctx.setLineDash([]);
+
+  // === DRAW ROUTES (dashed animated arrows) ===
+  const dashOff = animFrame * 0.5;
+  routes.forEach((route) => {
+    const wps = route.waypoints;
+    for (let i = 0; i < wps.length - 1; i++) {
+      const x1 = wps[i].nx * W, y1 = wps[i].ny * H;
+      const x2 = wps[i+1].nx * W, y2 = wps[i+1].ny * H;
+      drawDashedArrow(x1, y1, x2, y2, route.color, route.alpha, dashOff);
+    }
+  });
+
+  // === ANIMATED TRUCKS ===
+  const totalFrames = 400;
+  routes.forEach((route, ri) => {
+    const t = ((animFrame * 0.0018 + truckProgress[ri]) % 1);
+    const pos = routePoint(route.waypoints, t, W, H);
+
+    // Glow halo
+    const gr = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, 16);
+    gr.addColorStop(0, route.color + 'aa'); gr.addColorStop(1, route.color + '00');
+    ctx.fillStyle = gr;
+    ctx.beginPath(); ctx.arc(pos.x, pos.y, 16, 0, Math.PI*2); ctx.fill();
+
+    // Truck body
+    ctx.fillStyle = route.color;
+    ctx.shadowColor = route.color; ctx.shadowBlur = 12;
+    ctx.fillRect(pos.x - 6, pos.y - 5, 12, 10);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(pos.x + 3, pos.y - 4, 3, 8); // cab
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 8px Rajdhani';
+    ctx.textAlign = 'center';
+    ctx.fillText(['A','B','C'][ri], pos.x - 1, pos.y + 3);
+    ctx.textAlign = 'left';
+  });
+
+  // === NORMAL PUMPS ===
+  normalPumps.forEach(([nx, ny]) => {
+    const x = W*nx, y = H*ny;
+    ctx.fillStyle = '#2dcc70'; ctx.shadowColor = '#2dcc70'; ctx.shadowBlur = 7;
+    ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI*2); ctx.fill();
+    ctx.shadowBlur = 0;
+  });
+
+  // === RISK PUMPS ===
+  const pulse = (Math.sin(animFrame * 0.07) + 1) / 2;
+  riskPumps.forEach((p) => {
+    const x = W*p.nx, y = H*p.ny;
+    const isSelected = p.id === 'ESP-0847';
+    const outerR = 15 + pulse * 8;
+    const grad = ctx.createRadialGradient(x,y,0,x,y,outerR);
+    grad.addColorStop(0, `rgba(232,64,64,${0.3+pulse*0.2})`);
+    grad.addColorStop(1, 'rgba(232,64,64,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(x, y, outerR, 0, Math.PI*2); ctx.fill();
+
+    ctx.fillStyle = '#e84040'; ctx.shadowColor = '#e84040'; ctx.shadowBlur = 16 + pulse*8;
+    ctx.beginPath(); ctx.arc(x, y, isSelected ? 8 : 6, 0, Math.PI*2); ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Priority badge
+    ctx.fillStyle = '#e84040';
+    ctx.font = 'bold 10px Share Tech Mono';
+    ctx.fillText(p.id, x + 10, y + 4);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 8px Share Tech Mono';
+    ctx.fillText('[P'+p.priority+']', x + 10, y + 14);
+
+    if (isSelected) {
+      ctx.strokeStyle = `rgba(232,64,64,${0.4+pulse*0.6})`; ctx.lineWidth = 1.5;
+      ctx.setLineDash([3,3]);
+      ctx.beginPath(); ctx.moveTo(x-20,y); ctx.lineTo(x+20,y); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x,y-20); ctx.lineTo(x,y+20); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(x, y, 15, 0, Math.PI*2); ctx.stroke();
+    }
+  });
+
+  // === DEPOTS ===
+  depots.forEach((d) => {
+    const x = W*d.nx, y = H*d.ny;
+    // Diamond shape
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.fillStyle = d.color + 'cc';
+    ctx.strokeStyle = d.color;
+    ctx.lineWidth = 2;
+    ctx.shadowColor = d.color; ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.moveTo(0, -11); ctx.lineTo(9, 0); ctx.lineTo(0, 11); ctx.lineTo(-9, 0);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 9px Rajdhani';
+    ctx.textAlign = 'center'; ctx.fillText(d.crew, 0, 4);
+    ctx.restore();
+    ctx.fillStyle = d.color; ctx.font = 'bold 9px Share Tech Mono';
+    ctx.fillText(d.id, x + 12, y + 4);
+  });
+
+  // Grid overlay
+  ctx.strokeStyle = 'rgba(30,58,95,0.2)'; ctx.lineWidth = 0.5;
+  for (let i = 0; i <= 4; i++) {
+    ctx.beginPath(); ctx.moveTo(W*i/4,0); ctx.lineTo(W*i/4,H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,H*i/4); ctx.lineTo(W,H*i/4); ctx.stroke();
+  }
+
+  // Compass
+  const cx2 = W-42, cy2 = 42;
+  ctx.fillStyle='rgba(13,21,32,0.85)'; ctx.beginPath(); ctx.arc(cx2,cy2,22,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='rgba(100,160,220,0.4)'; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(cx2,cy2,22,0,Math.PI*2); ctx.stroke();
+  ctx.fillStyle='#fff'; ctx.font='bold 11px Rajdhani'; ctx.textAlign='center';
+  ctx.fillText('N',cx2,cy2-7);
+  ctx.fillStyle='rgba(200,220,240,0.5)'; ctx.font='9px Rajdhani';
+  ctx.fillText('S',cx2,cy2+17); ctx.fillText('E',cx2+14,cy2+4); ctx.fillText('O',cx2-14,cy2+4);
+  ctx.textAlign='left';
+
+  // Scale
+  ctx.fillStyle='rgba(100,140,180,0.5)'; ctx.fillRect(20, H-28, 60, 2);
+  ctx.fillStyle='rgba(150,190,220,0.6)'; ctx.font='10px Share Tech Mono'; ctx.fillText('10 km', 20, H-32);
+
+  animFrame++;
+}
+
+function resizeCanvas() {
+  mapCanvas.width = mapCanvas.offsetWidth * window.devicePixelRatio;
+  mapCanvas.height = mapCanvas.offsetHeight * window.devicePixelRatio;
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+}
+window.addEventListener('resize', () => { resizeCanvas(); });
+setTimeout(() => {
+  resizeCanvas();
+  (function animate() { drawMap(); requestAnimationFrame(animate); })();
+}, 120);
+
+// ================================================================
+// MINI CHARTS
+// ================================================================
+function genSeries(n, base, trend, noise, spike) {
+  let v = base, d = [];
+  for (let i = 0; i < n; i++) {
+    v += trend + (Math.random()-0.5)*noise;
+    if (spike && i > n*0.7) v += (Math.random()-0.3)*noise*2;
+    d.push(v);
+  }
+  return d;
+}
+
+function drawMiniChart(id, data, color) {
+  const canvas = document.getElementById(id);
+  if (!canvas) return;
+  const p = canvas.parentElement;
+  canvas.width = p.offsetWidth; canvas.height = p.offsetHeight;
+  const cx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  const min = Math.min(...data)*0.97, max = Math.max(...data)*1.03;
+  const range = max - min;
+  const pad = {t:5,b:5,l:4,r:4};
+  const cw = w-pad.l-pad.r, ch = h-pad.t-pad.b;
+  const tx = i => pad.l + (i/(data.length-1))*cw;
+  const ty = v => pad.t + (1-(v-min)/range)*ch;
+
+  // threshold
+  const tv = min+range*0.78;
+  cx.strokeStyle='rgba(232,64,64,0.4)'; cx.lineWidth=1; cx.setLineDash([3,4]);
+  cx.beginPath(); cx.moveTo(pad.l,ty(tv)); cx.lineTo(w-pad.r,ty(tv)); cx.stroke();
+  cx.setLineDash([]);
+
+  // grid
+  cx.strokeStyle='rgba(30,58,95,0.3)'; cx.lineWidth=0.5;
+  [0.25,0.5,0.75].forEach(f=>{const y=pad.t+f*ch; cx.beginPath(); cx.moveTo(pad.l,y); cx.lineTo(w-pad.r,y); cx.stroke();});
+
+  // fill
+  const grd = cx.createLinearGradient(0,pad.t,0,h);
+  grd.addColorStop(0, color.replace('rgb','rgba').replace(')',',0.3)')); grd.addColorStop(1,'rgba(0,0,0,0)');
+  cx.fillStyle=grd;
+  cx.beginPath(); cx.moveTo(tx(0),h-pad.b);
+  data.forEach((v,i)=>cx.lineTo(tx(i),ty(v)));
+  cx.lineTo(tx(data.length-1),h-pad.b); cx.closePath(); cx.fill();
+
+  // line
+  cx.strokeStyle=color; cx.lineWidth=2; cx.lineJoin='round';
+  cx.shadowColor=color; cx.shadowBlur=5;
+  cx.beginPath(); data.forEach((v,i)=>{ i===0?cx.moveTo(tx(i),ty(v)):cx.lineTo(tx(i),ty(v)); }); cx.stroke();
+  cx.shadowBlur=0;
+
+  // dot
+  const lx=tx(data.length-1), ly=ty(data[data.length-1]);
+  cx.fillStyle=color; cx.shadowColor=color; cx.shadowBlur=10;
+  cx.beginPath(); cx.arc(lx,ly,3,0,Math.PI*2); cx.fill(); cx.shadowBlur=0;
+}
+
+setTimeout(()=>{
+  drawMiniChart('c1', genSeries(72,92,0.7,3,true), 'rgb(232,64,64)');
+  drawMiniChart('c2', genSeries(72,48,0.25,5,true), 'rgb(232,100,64)');
+  drawMiniChart('c3', genSeries(72,0.15,0.008,0.05,true), 'rgb(255,80,80)');
+  drawMiniChart('c4', genSeries(72,420,-1.4,8,false), 'rgb(240,180,41)');
+  drawMiniChart('c5', genSeries(72,2200,-4.5,20,false), 'rgb(240,160,41)');
+}, 250);
+</script>
+</body>
+</html>
